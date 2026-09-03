@@ -41,6 +41,12 @@ def parse_args() -> argparse.Namespace:
         default=0.5,
         help="seconds to receive output after stdin EOF in --line-mode (default: 0.5)",
     )
+    parser.add_argument(
+        "--drain-timeout",
+        type=float,
+        default=1,
+        help="maximum seconds to flush stdin after EOF in --line-mode (default: 1)",
+    )
     return parser.parse_args()
 
 
@@ -199,7 +205,7 @@ async def run(args: argparse.Namespace) -> None:
         # keep this bounded.
         if client.is_connected:
             with contextlib.suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(input_queue.join(), timeout=1)
+                await asyncio.wait_for(input_queue.join(), timeout=args.drain_timeout)
             if args.line_mode and args.line_settle > 0:
                 await asyncio.sleep(args.line_settle)
         for task in (reader, writer):
