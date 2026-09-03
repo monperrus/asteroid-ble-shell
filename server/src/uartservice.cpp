@@ -105,6 +105,10 @@ UartService::UartService(int index, QDBusConnection bus, QObject *parent)
         if (m_session.state() == UartSession::Disabled)
             stopShell("session disabled");
     });
+    connect(&m_session, &UartSession::armedPeerChanged, this, [this](const QString &peer) {
+        if (peer.isEmpty())
+            stopShell("peer disconnected");
+    });
     m_reapTimer.setSingleShot(true);
     connect(&m_reapTimer, &QTimer::timeout, this, &UartService::reapShell);
 }
@@ -325,10 +329,9 @@ void UartService::onPtyReadable()
             break;
         }
         if (n == 0) {
-            // EOF: the shell died.  Return to the fail-closed state as well
-            // as reaping it; otherwise the pinned peer would remain Active
-            // with no shell and could never open a fresh session.
-            m_session.disarm();
+            // EOF ends only this PTY. Preserve the explicit arm deadline so
+            // a trusted peer can open a fresh session after reconnecting.
+            m_session.endPeer();
             return;
         }
         enqueueOutput(QByteArray(buf, int(n)));

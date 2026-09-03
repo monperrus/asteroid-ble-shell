@@ -29,7 +29,10 @@
  *
  *   disabled --Arm--> armed --first trusted RX--> active
  *       ^                |                            |
- *       +---Disarm / expiry / disconnect / idle-------+
+ *       +---Disarm / expiry----------------------------+
+ *
+ * A link loss ends the PTY and returns Active to Armed; the original arm
+ * deadline remains in force so the trusted peer can reconnect.
  *
  * disabled is the only state at boot; nothing is persisted.
  */
@@ -46,6 +49,7 @@ public:
     // Called by the on-watch D-Bus control interface.
     bool arm(int seconds);
     void disarm();
+    void endPeer();
 
     // Called by the NUS characteristics.
     bool isArmed() const { return m_state != Disabled; }

@@ -69,8 +69,6 @@ bool UartSession::arm(int seconds)
 
     if (m_state == Disabled)
         setState(Armed);
-    else if (m_state == Active)
-        m_idleTimer.start(5 * 60 * 1000); // re-arm keeps the session alive
 
     qInfo() << "BLE UART armed for" << seconds << "seconds";
     return true;
@@ -84,12 +82,23 @@ void UartSession::disarm()
     setState(Disabled);
 }
 
+void UartSession::endPeer()
+{
+    if (m_state != Active)
+        return;
+    qInfo() << "BLE UART peer disconnected; keeping arm window open";
+    m_idleTimer.stop();
+    m_devicePath.clear();
+    setState(Armed);
+    emit armedPeerChanged(QString());
+}
+
 void UartSession::setTxSubscribed(bool subscribed)
 {
     m_txSubscribed = subscribed;
     if (!subscribed && m_state == Active) {
-        qInfo() << "BLE UART: TX notifications stopped, ending session";
-        setState(Disabled);
+        qInfo() << "BLE UART: TX notifications stopped, ending peer session";
+        endPeer();
     }
 }
 
@@ -119,9 +128,8 @@ bool UartSession::authorizePeer(const QString &devicePath)
 
 void UartSession::onPtyOutput(const QByteArray &)
 {
-    // Activity: keep the idle timer fed, never beyond the arm deadline.
-    if (m_state == Active)
-        m_idleTimer.start(5 * 60 * 1000);
+    // The explicit arm deadline is the only lease boundary. In particular,
+    // a quiet terminal remains available for the full owner-selected window.
 }
 
 void UartSession::onArmTimeout()
@@ -132,8 +140,8 @@ void UartSession::onArmTimeout()
 
 void UartSession::onIdleTimeout()
 {
-    qInfo() << "BLE UART idle timeout";
-    setState(Disabled);
+    // Retained as a defensive slot for existing signal wiring; no idle timer
+    // is armed because the explicit arm deadline governs the lease.
 }
 
 void UartSession::setState(State state)
@@ -161,7 +169,6 @@ void UartSession::activatePeer(const QString &devicePath)
     if (m_state != Armed || !m_txSubscribed || devicePath.isEmpty())
         return;
     m_devicePath = devicePath;
-    m_idleTimer.start(5 * 60 * 1000);
     setState(Active);
     emit armedPeerChanged(devicePath);
     qInfo() << "BLE UART session started for" << devicePath;

@@ -204,10 +204,11 @@ void BlueZManager::onConnectedChanged()
         body = mConnectedDevice;
         appIcon = "ios-bluetooth-outline";
     } else {
-        // A BLE UART session cannot outlive its link: end it now so the
-        // shell's process group is torn down, not just unreachable.
-        if (mUartSession && mUartSession->state() != UartSession::Disabled)
-            mUartSession->disarm();
+        // The PTY cannot outlive its link, but the owner-selected arm window
+        // can. End this peer session and permit a trusted reconnection until
+        // the original deadline.
+        if (mUartSession)
+            mUartSession->endPeer();
         mAncs.disconnect();
         mCts.disconnect();
         //% "Disconnected"

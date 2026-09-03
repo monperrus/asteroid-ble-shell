@@ -86,9 +86,11 @@ An arbitrary nearby BLE device cannot open the shell. A UART session requires:
 4. TX notification subscription before RX input is accepted.
 5. A single peer identity pinned for the active session.
 
-Disarm, expiry, disconnect, TX-notification stop, and idle timeout all destroy
-the PTY process group. The daemon refuses to spawn a shell when running as root
-or as a user other than `ceres`.
+Disarm and expiry destroy the PTY process group and close the arm window.
+Disconnect and TX-notification stop also destroy the PTY, but leave the
+owner-selected arm window open (15 minutes in the UI) so the trusted peer can
+reconnect without another on-watch action. The daemon refuses to spawn a shell
+when running as root or as a user other than `ceres`.
 
 Treat every paired-and-trusted device as an administrator-capable terminal
 while BLE UART is armed. Remove stale pairings and arm only when needed. The
@@ -102,7 +104,8 @@ air trace for each target image and controller.
 - The app controls `org.asteroidos.btsyncd` on the `ceres` session bus, at
   `/org/asteroidos/btsyncd/uart`, interface `org.asteroidos.BleUart1`.
 - The client deliberately avoids awaiting an explicit Bleak disconnect because
-  of a BlueZ D-Bus race. Process exit releases the link and disarms the watch.
+  of a BlueZ D-Bus race. Process exit releases the link and terminates the
+  current PTY, while the explicit arm window remains reconnectable.
 - If `bluetoothd` is stuck in uninterruptible kernel sleep, restarting its
   service cannot recover it. Reboot the watch over USB, wait for Bluetooth to
   power on, restart `asteroid-btsyncd`, then arm again.
