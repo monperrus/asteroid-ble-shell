@@ -1,0 +1,14 @@
+# Local upstream checkout metadata retained during the monorepo migration.
+.upstream-metadata/
+
+# Python and editor state.
+__pycache__/
+*.py[cod]
+.venv/
+
+# Native build outputs and packaging artifacts.
+build/
+cmake-build-*/
+*.o
+*.ipk
+

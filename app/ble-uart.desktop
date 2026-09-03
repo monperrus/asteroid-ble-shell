@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Categories=Applications;
+Exec=/home/ceres/.local/bin/qml-run /home/ceres/.local/share/qml-apps/ble-uart.qml
+Icon=ios-unlock-outline
+X-Asteroid-Center-Color=#173F5C
+X-Asteroid-Outer-Color=#07111E
+Name=BLE UART
