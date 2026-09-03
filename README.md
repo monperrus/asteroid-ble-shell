@@ -53,8 +53,8 @@ With ADB connected for setup:
 ./app/deploy-adb.sh
 ```
 
-Open **BLE UART** in the launcher and tap the large centre dial until it says
-**UART ARMED**. This enables a 15-minute access window.
+Open **BLE SHELL** in the launcher and tap the large centre dial until it says
+**SHELL ARMED**. This enables a 15-minute access window.
 
 ### Connect from Linux
 
@@ -118,4 +118,3 @@ cannot inject bytes.
 
 The daemon retains the upstream GPL-3.0-or-later license in
 [`LICENSE`](LICENSE). Preserve upstream notices in server modifications.
-

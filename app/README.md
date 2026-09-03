@@ -1,6 +1,6 @@
-# BLE UART on-watch control
+# BLE SHELL on-watch control
 
-This QML launcher tile is the local safety control for the BLE UART debug
+This QML launcher tile is the local safety control for the BLE SHELL debug
 shell. It exposes a fixed **Enable for 15 minutes** action, current state and
 remaining time, plus an immediate disable action. Tap the large central dial:
 it says **TAP TO ENABLE** while off and toggles to immediate disable once

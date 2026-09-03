@@ -5,4 +5,4 @@ Exec=/home/ceres/.local/bin/qml-run /home/ceres/.local/share/qml-apps/ble-uart.q
 Icon=ios-unlock-outline
 X-Asteroid-Center-Color=#173F5C
 X-Asteroid-Outer-Color=#07111E
-Name=BLE UART
+Name=BLE SHELL

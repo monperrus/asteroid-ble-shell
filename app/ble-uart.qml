@@ -1,4 +1,4 @@
-/* BLE UART control — deliberately explicit local arming for the debug shell. */
+/* BLE SHELL control — deliberately explicit local arming for the debug shell. */
 import QtQuick
 import org.asteroid.controls
 import Nemo.DBus 2.0
@@ -42,7 +42,7 @@ Application {
             app.actionError = ""
             refreshTimer.restart()
         }, function(error, message) {
-            app.actionError = message || qsTr("Unable to enable UART")
+            app.actionError = message || qsTr("Unable to enable BLE shell")
         })
     }
 
@@ -53,7 +53,7 @@ Application {
             app.actionError = ""
             refreshTimer.restart()
         }, function(error, message) {
-            app.actionError = message || qsTr("Unable to disable UART")
+            app.actionError = message || qsTr("Unable to disable BLE shell")
         })
     }
 
@@ -120,8 +120,8 @@ Application {
                 width: parent.width
                 font.pixelSize: Dims.l(7)
                 text: uartState === "active" ? qsTr("SHELL ACTIVE")
-                      : uartState === "armed" ? qsTr("UART ARMED")
-                      : uartState === "disabled" ? qsTr("UART OFF")
+                      : uartState === "armed" ? qsTr("SHELL ARMED")
+                      : uartState === "disabled" ? qsTr("SHELL OFF")
                       : qsTr("SERVICE OFFLINE")
                 color: uartState === "active" ? "#FF8A84" : "white"
             }

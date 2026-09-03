@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install the BLE UART control tile through USB ADB. No root files are changed.
+# Install the BLE SHELL control tile through USB ADB. No root files are changed.
 set -eu
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -23,4 +23,4 @@ XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000
 '
 "
 
-echo "installed BLE UART tile; open the launcher and tap BLE UART"
+echo "installed BLE SHELL tile; open the launcher and tap BLE SHELL"
