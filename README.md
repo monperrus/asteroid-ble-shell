@@ -1,24 +1,21 @@
 # Asteroid BLE Shell
 
-An opt-in Bluetooth Low Energy terminal for AsteroidOS on the Huawei Watch 2
-(`sawfish`). It provides an interactive `ceres` shell when USB ADB and Wi-Fi
+An Bluetooth Low Energy (BLE) terminal for AsteroidOS. It provides an interactive `ceres` shell when USB ADB and Wi-Fi
 are unavailable.
 
-This is a developer debugging facility, not a replacement for SSH and not a
-general-purpose BLE serial service. The watch owner must explicitly enable it
+This is a developer debugging facilit. The watch owner must explicitly enable it
 locally before a previously trusted host can connect.
+
+Tested on the Huawei Watch 2 (`sawfish`)
 
 ## Components
 
 | Directory | Purpose |
 | --- | --- |
-| [`server/`](server/) | Modified `asteroid-btsyncd`: Nordic UART Service (NUS), access control, and a PTY running `/bin/sh -i` as `ceres`. |
+| [`server/`](server/) | Modified [asteroid-btsyncd](https://github.com/AsteroidOS/asteroid-btsyncd): Nordic UART Service (NUS), access control, and a PTY running `/bin/sh -i` as `ceres`. |
 | [`client/`](client/) | `ble-uart.py`, the Linux/Bleak terminal client. Its default is an SSH-like raw-terminal REPL. |
 | [`app/`](app/) | On-watch QML tile used to arm or disarm the service locally. |
 
-The server originated from [AsteroidOS/asteroid-btsyncd](https://github.com/AsteroidOS/asteroid-btsyncd).
-Its original checkout metadata is retained only in the ignored local
-`.upstream-metadata/` migration archive; it is not part of this repository.
 
 ## Architecture
 
@@ -120,4 +117,4 @@ cannot inject bytes.
 ## License
 
 The daemon retains the upstream GPL-3.0-or-later license in
-[`LICENSE`](LICENSE). Preserve upstream notices in server modifications.
+[`LICENSE`](LICENSE). 
