@@ -60,6 +60,10 @@ python3 -m pip install bleak
 python3 client/ble-uart.py --adapter hci0 43:43:A1:12:1F:AC
 ```
 
+If `bluetoothctl list` shows no controller, the host adapter is probably
+rfkill soft-blocked; see the non-root unblock recipe in
+[`../bluetooth.md`](../bluetooth.md).
+
 The default is an interactive shell REPL. Enter, Backspace, Ctrl-C, Ctrl-D and
 ANSI terminal output are forwarded to the watch PTY. Press `Ctrl-]` locally to
 disconnect. Use a paired watch address or advertised name; select another host
