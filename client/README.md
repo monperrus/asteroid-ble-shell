@@ -16,7 +16,9 @@ Pass a watch advertising name instead of an address to scan for it, and use
 `--adapter hci1` to select a non-default BlueZ adapter. The default REPL needs
 a real terminal and puts it in raw mode; press **Ctrl-]** to disconnect locally.
 `--line-mode` is intentionally the non-interactive option for pipes and simple
-scripts.
+scripts. It sends LF-terminated lines as CR, like a terminal
+Enter. Both modes exit with status 1 when the shell does not answer an initial
+empty command line within `--arm-timeout` seconds: BLE UART is not armed.
 
 This is deliberately close to an SSH shell, with one transport limitation:
 baseline NUS has no terminal-resize/control channel, so full-screen programs

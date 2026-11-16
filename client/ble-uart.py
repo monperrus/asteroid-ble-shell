@@ -21,6 +21,7 @@ NUS_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 LOCAL_ESCAPE = b"\x1d"  # Ctrl-]
 FALLBACK_CHUNK_SIZE = 20
+PROBE = b"\r"  # an empty command line: the shell answers with its prompt
 
 
 def parse_args() -> argparse.Namespace:
@@ -46,6 +47,13 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1,
         help="maximum seconds to flush stdin after EOF in --line-mode (default: 1)",
+    )
+    parser.add_argument(
+        "--arm-timeout",
+        type=float,
+        default=5,
+        help="seconds to wait for the shell's first prompt before reporting "
+        "that BLE UART is not armed (default: 5)",
     )
     return parser.parse_args()
 
@@ -137,13 +145,26 @@ async def raw_terminal_input(queue: asyncio.Queue[bytes], stop: asyncio.Event) -
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
 
 
+def to_terminal_line(line: bytes) -> bytes:
+    """Turn a stdin line ending (LF or CRLF) into the CR a terminal Enter sends.
+
+    The watch shell reads a PTY through readline: with LF endings only the
+    first line of a batch runs and the following ones are lost.
+    """
+    if line.endswith(b"\r\n"):
+        return line[:-2] + b"\r"
+    if line.endswith(b"\n"):
+        return line[:-1] + b"\r"
+    return line
+
+
 async def line_mode_input(queue: asyncio.Queue[bytes], stop: asyncio.Event) -> None:
     while not stop.is_set():
         line = await asyncio.to_thread(sys.stdin.buffer.readline)
         if not line:
             stop.set()
             return
-        await queue.put(line)
+        await queue.put(to_terminal_line(line))
 
 
 def explain_error(error: Exception) -> str:
@@ -187,11 +208,28 @@ async def run(args: argparse.Namespace) -> None:
         if NUS_RX_UUID not in found or NUS_TX_UUID not in found:
             raise RuntimeError("NUS is incomplete: RX or TX characteristic is absent")
 
-        await client.start_notify(NUS_TX_UUID, lambda _, data: write_stdout(bytearray(data)))
+        answered = asyncio.Event()
+
+        def on_tx(_, data: bytearray) -> None:
+            answered.set()
+            write_stdout(bytearray(data))
+
+        await client.start_notify(NUS_TX_UUID, on_tx)
         print(
             "Connected to ceres@watch over BLE UART. Press Ctrl-] to disconnect.",
             file=sys.stderr,
         )
+        # The watch drops input silently while BLE UART is disarmed, so probe
+        # before reading stdin and fail loudly when the shell stays mute.
+        await client.write_gatt_char(NUS_RX_UUID, PROBE, response=False)
+        try:
+            await asyncio.wait_for(answered.wait(), timeout=args.arm_timeout)
+        except asyncio.TimeoutError:
+            raise RuntimeError(
+                f"no answer from the watch shell within {args.arm_timeout:g} s: "
+                "BLE UART is not armed (open BLE SHELL on the watch and tap "
+                "until it says SHELL ARMED)"
+            ) from None
 
         writer = asyncio.create_task(write_stream(client, input_queue, stop))
         reader = asyncio.create_task(

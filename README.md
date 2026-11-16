@@ -72,8 +72,16 @@ controller with `--adapter` if needed.
 For a pipe or automated smoke test, use line mode explicitly:
 
 ```sh
-printf 'uname -a\r' | python3 client/ble-uart.py --line-mode 43:43:A1:12:1F:AC
+printf 'uname -a\ndate\n' | python3 client/ble-uart.py --line-mode 43:43:A1:12:1F:AC
 ```
+
+Line mode turns each LF or CRLF line ending into the CR a terminal Enter
+sends; the watch shell loses every line after the first when fed bare LFs.
+
+Before reading any input, the client sends an empty command line and waits for
+the shell's prompt (`--arm-timeout`, 5 s by default). The watch drops input
+silently while BLE UART is disarmed, so a mute shell exits with status 1 and
+`BLE UART: no answer from the watch shell ... not armed`.
 
 ## Security model
 
