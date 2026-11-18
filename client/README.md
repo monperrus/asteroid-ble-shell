@@ -18,7 +18,9 @@ a real terminal and puts it in raw mode; press **Ctrl-]** to disconnect locally.
 `--line-mode` is intentionally the non-interactive option for pipes and simple
 scripts. It sends LF-terminated lines as CR, like a terminal
 Enter. Both modes exit with status 1 when the shell does not answer an initial
-empty command line within `--arm-timeout` seconds: BLE UART is not armed.
+empty command line within `--arm-timeout` seconds: BLE UART is not armed. They also exit
+with status 1, naming what was lost, when a write stalls for 10 s or input lines are
+still unsent after `--drain-timeout` seconds; the client never drops input silently.
 
 This is deliberately close to an SSH shell, with one transport limitation:
 baseline NUS has no terminal-resize/control channel, so full-screen programs

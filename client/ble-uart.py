@@ -22,6 +22,7 @@ NUS_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 LOCAL_ESCAPE = b"\x1d"  # Ctrl-]
 FALLBACK_CHUNK_SIZE = 20
 PROBE = b"\r"  # an empty command line: the shell answers with its prompt
+WRITE_TIMEOUT = 10.0  # seconds one chunk may take before the client fails loudly
 
 
 def parse_args() -> argparse.Namespace:
@@ -90,26 +91,53 @@ def write_stdout(data: bytearray) -> None:
         view = view[written:]
 
 
-def tx_chunk_size(client: BleakClient) -> int:
-    """Use Bleak's negotiated write limit when exposed; otherwise stay safe."""
-    for service in client.services:
-        for characteristic in service.characteristics:
-            if characteristic.uuid.lower() == NUS_RX_UUID:
-                size = characteristic.max_write_without_response_size
-                if isinstance(size, int) and size > 0:
-                    return size
-    return FALLBACK_CHUNK_SIZE
+class RxWriter:
+    """Writes to the watch's NUS RX characteristic, failing loudly when stalled.
+
+    Bleak awaits each write's D-Bus reply with no timeout of its own, so every
+    chunk is bounded by WRITE_TIMEOUT.
+    """
+
+    def __init__(self, client: BleakClient) -> None:
+        self.client = client
+        char = client.services.get_characteristic(NUS_RX_UUID)
+        if char is None:
+            raise RuntimeError("NUS is incomplete: RX characteristic is absent")
+        self.char = char
+        size = getattr(self.char, "max_write_without_response_size", None)
+        self.chunk_size = size if isinstance(size, int) and size > 0 else FALLBACK_CHUNK_SIZE
+
+    async def send(self, data: bytes) -> None:
+        for start in range(0, len(data), self.chunk_size):
+            try:
+                await asyncio.wait_for(
+                    self.client.write_gatt_char(
+                        self.char, data[start : start + self.chunk_size], response=False
+                    ),
+                    timeout=WRITE_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                raise RuntimeError(
+                    f"write to the watch stalled for {WRITE_TIMEOUT:g} s "
+                    f"({len(data) - start} bytes of this line unsent)"
+                ) from None
 
 
-async def write_stream(client: BleakClient, queue: asyncio.Queue[bytes], stop: asyncio.Event) -> None:
-    chunk_size = tx_chunk_size(client)
-    while not stop.is_set():
+async def write_stream(
+    writer: RxWriter, queue: asyncio.Queue[bytes], stop: asyncio.Event, failure: list[BaseException]
+) -> None:
+    # Runs until cancelled, not until `stop`: line mode sets `stop` at stdin
+    # EOF, while lines read before EOF are still queued and must be sent.
+    while True:
         data = await queue.get()
         try:
-            for start in range(0, len(data), chunk_size):
-                await client.write_gatt_char(
-                    NUS_RX_UUID, data[start : start + chunk_size], response=False
-                )
+            await writer.send(data)
+        except Exception as error:
+            # Surface the error from run() instead of leaving the queue to drain
+            # into a silent timeout.
+            failure.append(error)
+            stop.set()
+            raise
         finally:
             queue.task_done()
 
@@ -215,13 +243,14 @@ async def run(args: argparse.Namespace) -> None:
             write_stdout(bytearray(data))
 
         await client.start_notify(NUS_TX_UUID, on_tx)
+        rx = RxWriter(client)
         print(
             "Connected to ceres@watch over BLE UART. Press Ctrl-] to disconnect.",
             file=sys.stderr,
         )
         # The watch drops input silently while BLE UART is disarmed, so probe
         # before reading stdin and fail loudly when the shell stays mute.
-        await client.write_gatt_char(NUS_RX_UUID, PROBE, response=False)
+        await rx.send(PROBE)
         try:
             await asyncio.wait_for(answered.wait(), timeout=args.arm_timeout)
         except asyncio.TimeoutError:
@@ -231,7 +260,8 @@ async def run(args: argparse.Namespace) -> None:
                 "until it says SHELL ARMED)"
             ) from None
 
-        writer = asyncio.create_task(write_stream(client, input_queue, stop))
+        failure: list[BaseException] = []
+        writer = asyncio.create_task(write_stream(rx, input_queue, stop, failure))
         reader = asyncio.create_task(
             line_mode_input(input_queue, stop)
             if args.line_mode
@@ -240,17 +270,27 @@ async def run(args: argparse.Namespace) -> None:
         await stop.wait()
         # Let bytes already accepted from stdin reach the watch before a local
         # EOF/Ctrl-] ends the process. A disconnected client cannot drain, so
-        # keep this bounded.
-        if client.is_connected:
-            with contextlib.suppress(asyncio.TimeoutError):
+        # keep this bounded, and say so when input is left behind.
+        unsent = 0
+        if client.is_connected and not failure:
+            try:
                 await asyncio.wait_for(input_queue.join(), timeout=args.drain_timeout)
-            if args.line_mode and args.line_settle > 0:
+            except asyncio.TimeoutError:
+                unsent = input_queue.qsize()
+            if args.line_mode and args.line_settle > 0 and not failure:
                 await asyncio.sleep(args.line_settle)
         for task in (reader, writer):
             task.cancel()
         for task in (reader, writer):
-            with contextlib.suppress(asyncio.CancelledError):
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
+        if failure:
+            raise RuntimeError(str(failure[0])) from failure[0]
+        if unsent or not input_queue.empty():
+            raise RuntimeError(
+                f"{max(unsent, input_queue.qsize())} input line(s) not sent to the watch "
+                f"(drain timeout {args.drain_timeout:g} s, or the watch disconnected)"
+            )
     finally:
         # Deliberately do not await client.disconnect().  On this host's BlueZ
         # stack, disconnect can race its D-Bus Disconnected signal and report
