@@ -21,6 +21,7 @@ NUS_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_TX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 LOCAL_ESCAPE = b"\x1d"  # Ctrl-]
 FALLBACK_CHUNK_SIZE = 20
+MAX_ATTRIBUTE_VALUE_SIZE = 512
 PROBE = b"\r"  # an empty command line: the shell answers with its prompt
 WRITE_TIMEOUT = 10.0  # seconds one chunk may take before the client fails loudly
 
@@ -105,7 +106,11 @@ class RxWriter:
             raise RuntimeError("NUS is incomplete: RX characteristic is absent")
         self.char = char
         size = getattr(self.char, "max_write_without_response_size", None)
-        self.chunk_size = size if isinstance(size, int) and size > 0 else FALLBACK_CHUNK_SIZE
+        if not isinstance(size, int) or size <= 0:
+            size = FALLBACK_CHUNK_SIZE
+        # A 517-byte ATT MTU leaves 514 bytes after headers, but the GATT
+        # attribute value is still limited to 512. BlueZ drops larger commands.
+        self.chunk_size = min(size, MAX_ATTRIBUTE_VALUE_SIZE)
 
     async def send(self, data: bytes) -> None:
         for start in range(0, len(data), self.chunk_size):
@@ -295,7 +300,7 @@ async def run(args: argparse.Namespace) -> None:
         # Deliberately do not await client.disconnect().  On this host's BlueZ
         # stack, disconnect can race its D-Bus Disconnected signal and report
         # EOFError after a successful session. Process teardown closes the
-        # connection; the watch then disarms and reaps the shell.
+        # connection; the watch reaps the shell and retains the arm window.
         pass
 
 

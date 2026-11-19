@@ -20,7 +20,13 @@ scripts. It sends LF-terminated lines as CR, like a terminal
 Enter. Both modes exit with status 1 when the shell does not answer an initial
 empty command line within `--arm-timeout` seconds: BLE UART is not armed. They also exit
 with status 1, naming what was lost, when a write stalls for 10 s or input lines are
-still unsent after `--drain-timeout` seconds; the client never drops input silently.
+still unsent after `--drain-timeout` seconds.
+
+Each write uses the smaller of the negotiated payload size and the 512-byte
+GATT attribute limit. With a 517-byte ATT MTU, BlueZ can advertise a 514-byte
+write payload. The watch silently discards Write Commands over 512 bytes.
+Write Commands carry no acknowledgement, so for scripted output use an
+end marker or a checksum to verify the result.
 
 This is deliberately close to an SSH shell, with one transport limitation:
 baseline NUS has no terminal-resize/control channel, so full-screen programs

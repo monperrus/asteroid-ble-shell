@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -74,3 +75,28 @@ def test_write_stream_reports_a_stalled_write() -> None:
 
     failure, stopped = asyncio.run(scenario())
     assert stopped and "stalled" in str(failure[0])
+
+
+@pytest.mark.parametrize(("reported_size", "first_chunk"), [(20, 20), (512, 512), (514, 512)])
+def test_write_chunks_fit_the_gatt_attribute(reported_size: int, first_chunk: int) -> None:
+    """BlueZ can report MTU minus headers, which can exceed the value limit."""
+    import asyncio
+
+    writes = []
+    received = bytearray()
+    characteristic = SimpleNamespace(max_write_without_response_size=reported_size)
+
+    async def write(_characteristic, data: bytes, *, response: bool) -> None:
+        assert not response
+        writes.append(len(data))
+        if len(data) <= 512:  # BlueZ silently drops oversized Write Commands.
+            received.extend(data)
+
+    client = SimpleNamespace(
+        services=SimpleNamespace(get_characteristic=lambda _uuid: characteristic),
+        write_gatt_char=write,
+    )
+    command = b"x" * 563 + b"\r"
+    asyncio.run(ble_uart.RxWriter(client).send(command))
+    assert writes[0] == first_chunk
+    assert received == command
