@@ -40,6 +40,8 @@ public:
 
 private:
     bool mConnected, mServicesResolved;
+    bool mDiscovering = false;
+    bool mRestartAfterDiscovery = false;
     QDBusObjectPath mAppPath, mAdvertPath;
     QString mAdapter, mConnectedDevice;
     QDBusServiceWatcher *mWatcher;

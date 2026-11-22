@@ -17,6 +17,7 @@
 
 #include "bluezmanager.h"
 
+#include <QCoreApplication>
 #include <QDBusServiceWatcher>
 #include <QDBusInterface>
 #include <QDBusPendingCall>
@@ -65,6 +66,8 @@ void BlueZManager::serviceUnregistered(const QString& name)
 {
     qDebug() << "Service" << name << "is not running";
     setAdapter("adapter");
+    mDiscovering = false;
+    mRestartAfterDiscovery = false;
     mConnectedDevice = "";
     setConnected(false);
 }
@@ -83,9 +86,14 @@ void BlueZManager::updateAdapter() {
     QString adapter = "";
     bool connected = false;
     bool servicesResolved = false;
+    bool discovering = false;
 
     QDBusInterface remoteOm(BLUEZ_SERVICE_NAME, "/", DBUS_OM_IFACE, mBus);
     QDBusMessage result = remoteOm.call("GetManagedObjects");
+    if (result.type() != QDBusMessage::ReplyMessage || result.arguments().isEmpty()) {
+        qWarning() << "GetManagedObjects failed:" << result.errorMessage();
+        return;
+    }
 
     const QDBusArgument argument = result.arguments().at(0).value<QDBusArgument>();
     if (argument.currentType() == QDBusArgument::MapType) {
@@ -98,8 +106,10 @@ void BlueZManager::updateAdapter() {
             argument >> key >> value;
             argument.endMapEntry();
 
-            if (value.contains(GATT_MANAGER_IFACE) && value.contains(LE_ADVERTISING_MANAGER_IFACE))
+            if (value.contains(GATT_MANAGER_IFACE) && value.contains(LE_ADVERTISING_MANAGER_IFACE)) {
                 adapter = key;
+                discovering = value.value("org.bluez.Adapter1").value("Discovering").toBool();
+            }
 
             if (value.contains(DEVICE_MANAGER_IFACE)) {
                  mBus.connect(BLUEZ_SERVICE_NAME, key, DBUS_PROPERTIES_IFACE, "PropertiesChanged", this, SLOT(PropertiesChanged(QString, QMap<QString, QVariant>, QStringList)));
@@ -122,12 +132,29 @@ void BlueZManager::updateAdapter() {
     setAdapter(adapter);
     setConnected(connected);
     setServicesResolved(servicesResolved);
+
+    // Discovery on sawfish can leave the registered advertisement invisible.
+    // Let systemd re-register it once discovery and peer activity are over.
+    if (mDiscovering && !discovering && !adapter.isEmpty())
+        mRestartAfterDiscovery = true;
+    mDiscovering = discovering;
+    if (mRestartAfterDiscovery && !discovering && !connected && !adapter.isEmpty()) {
+        mRestartAfterDiscovery = false;
+        qWarning() << "BlueZ discovery ended; restarting to refresh BLE advertising";
+        QCoreApplication::exit(1);
+    }
 }
 
 void BlueZManager::setAdapter(QString adapter)
 {
     if (adapter != mAdapter) {
+        if (mAdapter.startsWith('/'))
+            mBus.disconnect(BLUEZ_SERVICE_NAME, mAdapter, DBUS_PROPERTIES_IFACE, "PropertiesChanged",
+                            this, SLOT(PropertiesChanged(QString, QMap<QString, QVariant>, QStringList)));
         mAdapter = adapter;
+        if (mAdapter.startsWith('/'))
+            mBus.connect(BLUEZ_SERVICE_NAME, mAdapter, DBUS_PROPERTIES_IFACE, "PropertiesChanged",
+                         this, SLOT(PropertiesChanged(QString, QMap<QString, QVariant>, QStringList)));
         emit adapterChanged();
     }
 }
@@ -187,9 +214,17 @@ void BlueZManager::onAdapterChanged()
         qDebug() << "No BLE adapter found";
 }
 
-void BlueZManager::PropertiesChanged(QString, QMap<QString, QVariant>, QStringList)
+void BlueZManager::PropertiesChanged(QString interface, QMap<QString, QVariant> changed, QStringList invalidated)
 {
-    updateAdapter();
+    const QStringList relevant = interface == DEVICE_MANAGER_IFACE
+        ? QStringList{"Connected", "ServicesResolved", "Alias"}
+        : QStringList{"Discovering", "Powered"};
+    for (const QString &property : relevant) {
+        if (changed.contains(property) || invalidated.contains(property)) {
+            updateAdapter();
+            return;
+        }
+    }
 }
 
 void BlueZManager::onConnectedChanged()

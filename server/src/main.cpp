@@ -56,6 +56,5 @@ int main(int argc, char **argv)
     bm.setUartSession(app.uartService()->session());
     UartControl uartControl(app.uartService()->session());
 
-    qcoreapp.exec();
-    return 0;
+    return qcoreapp.exec();
 }
