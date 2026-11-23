@@ -14,7 +14,12 @@ import os
 import sys
 import termios
 import tty
-from bleak import BleakClient, BleakError, BleakScanner
+from pathlib import Path
+
+from bleak import BleakClient, BleakError
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import ble_link
 
 NUS_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 NUS_RX_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
@@ -58,29 +63,6 @@ def parse_args() -> argparse.Namespace:
         "that BLE UART is not armed (default: 5)",
     )
     return parser.parse_args()
-
-
-def bluez_kwargs(adapter: str | None) -> dict:
-    """Return BlueZ backend options without imposing an adapter by default."""
-    # Bleak 1.x moved the adapter option under its BlueZ backend dictionary.
-    # Using this form works for both scanner and client and avoids the
-    # deprecated top-level ``adapter=`` warning.
-    return {"bluez": {"adapter": adapter}} if adapter else {}
-
-
-async def resolve_watch(name_or_address: str, adapter: str | None, timeout: float):
-    if ":" in name_or_address:
-        return name_or_address
-
-    device = await BleakScanner.find_device_by_filter(
-        lambda dev, adv: name_or_address.casefold()
-        in ((dev.name or adv.local_name or "").casefold()),
-        timeout=timeout,
-        **bluez_kwargs(adapter),
-    )
-    if device is None:
-        raise RuntimeError(f"watch named {name_or_address!r} was not found during scan")
-    return device
 
 
 def write_stdout(data: bytearray) -> None:
@@ -215,7 +197,6 @@ def explain_error(error: Exception) -> str:
 async def run(args: argparse.Namespace) -> None:
     if not args.line_mode and not sys.stdin.isatty():
         raise RuntimeError("the shell REPL needs a terminal; use --line-mode for a pipe or file")
-    target = await resolve_watch(args.watch, args.adapter, args.scan_timeout)
     stop = asyncio.Event()
     input_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=128)
 
@@ -224,11 +205,11 @@ async def run(args: argparse.Namespace) -> None:
             print("\r\nBLE UART: watch disconnected", file=sys.stderr)
             stop.set()
 
-    client = BleakClient(
-        target, disconnected_callback=disconnected, **bluez_kwargs(args.adapter)
+    link = ble_link.WatchLink(
+        args.watch, args.adapter, scan_timeout=args.scan_timeout, disconnected_callback=disconnected
     )
     try:
-        await client.connect()
+        client = await link.__aenter__()
         if not client.is_connected:
             raise RuntimeError("connection failed")
 
@@ -297,11 +278,11 @@ async def run(args: argparse.Namespace) -> None:
                 f"(drain timeout {args.drain_timeout:g} s, or the watch disconnected)"
             )
     finally:
-        # Deliberately do not await client.disconnect().  On this host's BlueZ
-        # stack, disconnect can race its D-Bus Disconnected signal and report
-        # EOFError after a successful session. Process teardown closes the
-        # connection; the watch reaps the shell and retains the arm window.
-        pass
+        # Leaves a link that existed before (e.g. watch-autolock's) up, and
+        # closes one this session opened; the watch reaps the shell either way
+        # and keeps the arm window.
+        stop.set()
+        await link.release()
 
 
 def main() -> int:

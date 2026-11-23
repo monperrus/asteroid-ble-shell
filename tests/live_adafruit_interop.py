@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import importlib.util
 import json
 import os
 import queue
@@ -23,11 +22,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "client"))
+import ble_link
 import fts
 
-_spec = importlib.util.spec_from_file_location("watch_fs", HERE.parent / "client" / "watch-fs.py")
-watch_fs = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(watch_fs)
 # The vendored Adafruit client, loaded with BLE stand-ins.
 from test_fts import adafruit
 
@@ -59,20 +56,17 @@ def main() -> int:
     loop = asyncio.new_event_loop()
     threading.Thread(target=loop.run_forever, daemon=True).start()
 
-    async def connect():
-        from bleak import BleakClient
-        from bleak.backends.device import BLEDevice
+    link = ble_link.WatchLink(address)
 
-        path = f"/org/bluez/hci0/dev_{address.upper().replace(':', '_')}"
-        ble = BleakClient(BLEDevice(address.upper(), None, {"path": path, "props": None}))
-        await ble.connect()
+    async def connect():
+        ble = await link.__aenter__()
         char = ble.services.get_characteristic(fts.TRANSFER_UUID)
         size = min(getattr(char, "max_write_without_response_size", 20) or 20, 512)
         buffer = BleakPacketBuffer(loop, ble, char, size)
         await ble.start_notify(char, lambda _, data: buffer.packets.put(bytes(data)))
         return ble, buffer
 
-    ble, buffer = asyncio.run_coroutine_threadsafe(connect(), loop).result(timeout=60)
+    _ble, buffer = asyncio.run_coroutine_threadsafe(connect(), loop).result(timeout=60)
     try:
         client = adafruit.FileTransferClient(types.SimpleNamespace(version=4, raw=buffer))
         data = os.urandom(50_000)
@@ -93,7 +87,7 @@ def main() -> int:
         }))
         return 0 if ok else 1
     finally:
-        watch_fs.keep_link(ble)
+        asyncio.run_coroutine_threadsafe(link.release(), loop).result(timeout=30)
         loop.call_soon_threadsafe(loop.stop)
 
 

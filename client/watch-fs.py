@@ -25,7 +25,6 @@ import fts
 
 MAX_ATTRIBUTE_VALUE_SIZE = 512
 FALLBACK_WRITE_SIZE = 20
-CONNECT_ATTEMPTS = 10
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -130,80 +129,30 @@ def render(args: argparse.Namespace, result: object) -> None:
             print(f"{e['size']:>10}  {stamp}  {name}")
 
 
-def bluez_kwargs(adapter: str | None) -> dict:
-    return {"bluez": {"adapter": adapter}} if adapter else {}
-
-
 async def connect_and_run(args: argparse.Namespace) -> object:
-    from bleak import BleakClient, BleakScanner
-    from bleak.backends.device import BLEDevice
-    from bleak.exc import BleakDBusError
+    import ble_link
 
-    target: object = args.watch
-    if ":" in args.watch:
-        # Address the BlueZ device object directly: a watch that is already
-        # connected (e.g. held by watch-autolock) does not advertise, so the
-        # scan Bleak runs for a bare address would never find it.
-        path = f"/org/bluez/{args.adapter or 'hci0'}/dev_{args.watch.upper().replace(':', '_')}"
-        target = BLEDevice(args.watch.upper(), None, {"path": path, "props": None})
-    else:
-        target = await BleakScanner.find_device_by_filter(
-            lambda dev, adv: args.watch.casefold() in (dev.name or adv.local_name or "").casefold(),
-            timeout=args.scan_timeout,
-            **bluez_kwargs(args.adapter),
-        )
-        if target is None:
-            raise RuntimeError(f"watch named {args.watch!r} was not found during scan")
-    # Never disconnect: Device1.Disconnect drops the whole link, including one
-    # held by watch-autolock. Process exit releases this client's
-    # notification session, which resets the watch-side parser.
-    ble = BleakClient(target, **bluez_kwargs(args.adapter))
-    for attempt in range(CONNECT_ATTEMPTS):
-        try:
-            await ble.connect()
-            break
-        except BleakDBusError as error:
-            # Another client (e.g. watch-autolock) is reconnecting right now.
-            if error.dbus_error != "org.bluez.Error.InProgress" or attempt == CONNECT_ATTEMPTS - 1:
-                raise
-            await asyncio.sleep(1)
-    char = ble.services.get_characteristic(fts.TRANSFER_UUID)
-    if char is None:
-        raise RuntimeError("watch does not offer the file transfer service (0xFEBB)")
-    version_char = ble.services.get_characteristic(fts.VERSION_UUID)
-    if version_char is not None:
-        raw = await ble.read_gatt_char(version_char)
-        version = struct.unpack("<I", bytes(raw).ljust(4, b"\0")[:4])[0]
-        if version < fts.PROTOCOL_VERSION:
-            raise RuntimeError(f"watch speaks file transfer v{version}, need v{fts.PROTOCOL_VERSION}")
-    size = getattr(char, "max_write_without_response_size", None)
-    if not isinstance(size, int) or size <= 0:
-        size = FALLBACK_WRITE_SIZE
-    size = min(size, MAX_ATTRIBUTE_VALUE_SIZE)
+    async with ble_link.WatchLink(args.watch, args.adapter, scan_timeout=args.scan_timeout) as ble:
+        char = ble.services.get_characteristic(fts.TRANSFER_UUID)
+        if char is None:
+            raise RuntimeError("watch does not offer the file transfer service (0xFEBB)")
+        version_char = ble.services.get_characteristic(fts.VERSION_UUID)
+        if version_char is not None:
+            raw = await ble.read_gatt_char(version_char)
+            version = struct.unpack("<I", bytes(raw).ljust(4, b"\0")[:4])[0]
+            if version < fts.PROTOCOL_VERSION:
+                raise RuntimeError(f"watch speaks file transfer v{version}, need v{fts.PROTOCOL_VERSION}")
+        size = getattr(char, "max_write_without_response_size", None)
+        if not isinstance(size, int) or size <= 0:
+            size = FALLBACK_WRITE_SIZE
+        size = min(size, MAX_ATTRIBUTE_VALUE_SIZE)
 
-    async def send(data: bytes) -> None:
-        await asyncio.wait_for(ble.write_gatt_char(char, data, response=False), args.timeout)
+        async def send(data: bytes) -> None:
+            await asyncio.wait_for(ble.write_gatt_char(char, data, response=False), args.timeout)
 
-    client = fts.Client(send, size, timeout=args.timeout)
-    await ble.start_notify(char, lambda _, data: client.on_notify(data))
-    try:
+        client = fts.Client(send, size, timeout=args.timeout)
+        await ble.start_notify(char, lambda _, data: client.on_notify(data))
         return await run(args, client)
-    finally:
-        keep_link(ble)
-
-
-def keep_link(ble: object) -> None:
-    """Stop Bleak from disconnecting the device when asyncio.run() exits.
-
-    Bleak (BlueZ backend, checked on 3.0.2) runs a disconnect monitor task
-    that sends Device1.Disconnect when it is cancelled at loop shutdown.
-    Setting its event ends the task normally instead. Private API: if it
-    moves, the only cost is the old behaviour (a dropped link).
-    """
-    backend = getattr(ble, "_backend", None)
-    event = getattr(backend, "_disconnect_monitor_event", None)
-    if event is not None:
-        event.set()
 
 
 def main(argv: list[str] | None = None) -> int:

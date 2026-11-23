@@ -33,10 +33,19 @@ baseline NUS has no terminal-resize/control channel, so full-screen programs
 start at the watch PTY's fixed 80×24 size and will not follow local window
 resizes.
 
-The client subscribes to TX before transmitting any input. It intentionally
-does not call `BleakClient.disconnect()` at exit because this host's
-Bleak/BlueZ D-Bus combination can report a spurious `EOFError` during that
-race; closing the client process releases the link cleanly.
+The client subscribes to TX before transmitting any input.
+
+## Sharing the link: `ble_link.py`
+
+`ble-uart.py`, `watch-fs.py` and `../watch-agent` connect through
+`ble_link.WatchLink`, so they work whether or not another program (such as
+`watch-autolock`) already holds the watch's LE link, and leave it as they found
+it. An address goes straight to BlueZ's device object, because a connected watch
+does not advertise (a name needs a scan, so it only works while unconnected).
+`InProgress` while another client connects is retried for 10 s. On exit, a link
+that existed before is kept: Bleak would otherwise send `Device1.Disconnect`,
+which drops it for every client. A link the tool opened is closed, ignoring the
+spurious `EOFError` this host's BlueZ can report while it goes down.
 
 ## File transfer: `watch-fs.py`
 
@@ -52,11 +61,6 @@ python3 client/watch-fs.py 43:43:A1:12:1F:AC put song.mp3 /Music/ --verify
 python3 client/watch-fs.py 43:43:A1:12:1F:AC get /sleep/2026-11-23.csv
 python3 client/watch-fs.py 43:43:A1:12:1F:AC --json ls /sleep
 ```
-
-Pass the watch's address, not its name, while another program keeps the watch
-connected (e.g. `watch-autolock`): a connected watch does not advertise, and
-`watch-fs` then uses BlueZ's device object directly. It never disconnects the
-watch on exit, so such a link survives.
 
 Measured on the Huawei Watch 2 (512-byte writes, 2026-11-23, single runs): `put`
 of 1 MiB took 38-63 s, `get` 41 s with the default 64 KiB read requests.
