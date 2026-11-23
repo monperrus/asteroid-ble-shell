@@ -59,7 +59,7 @@ MKDIR_REPLY = struct.Struct("<BBxxxxxxQ")  # cmd, status, truncated mtime ns
 LISTDIR_REPLY = struct.Struct("<BBHIIIQI")  # cmd, status, path len, index, total, flags, mtime, size
 MOVE_REQ = struct.Struct("<BxHH")  # cmd, old path len, new path len; old, 1 pad byte, new
 
-DEFAULT_READ_CHUNK = 4096
+DEFAULT_READ_CHUNK = 65536
 STATUS_NAMES = {
     OK: "ok",
     ERROR: "error",

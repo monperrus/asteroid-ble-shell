@@ -53,6 +53,16 @@ python3 client/watch-fs.py 43:43:A1:12:1F:AC get /sleep/2026-11-23.csv
 python3 client/watch-fs.py 43:43:A1:12:1F:AC --json ls /sleep
 ```
 
+Pass the watch's address, not its name, while another program keeps the watch
+connected (e.g. `watch-autolock`): a connected watch does not advertise, and
+`watch-fs` then uses BlueZ's device object directly. It never disconnects the
+watch on exit, so such a link survives.
+
+Measured on the Huawei Watch 2 (512-byte writes, 2026-11-23, single runs): `put`
+of 1 MiB took 38-63 s, `get` 41 s with the default 64 KiB read requests.
+`tests/live_adafruit_interop.py ADDRESS` checks Adafruit's own client against a
+live watch.
+
 Commands: `ls`, `get` (`-` for stdout), `put` (a trailing `/` keeps the
 basename; `--verify` reads the file back and compares SHA-256), `rm`
 (recursive), `mkdir` (with parents), `mv`. Only `ls`, `get -` and `--json`

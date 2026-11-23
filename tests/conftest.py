@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from fts_engine import EngineProcess, build  # noqa: E402
-from fts_model import ServerModel  # noqa: E402
+from fts_engine import EngineProcess, build
+from fts_model import ServerModel
 
 
 @pytest.fixture(scope="session")
