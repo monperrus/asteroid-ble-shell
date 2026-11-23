@@ -17,12 +17,24 @@ Tested on the Huawei Watch 2 (`sawfish`)
 
 | Directory | Purpose |
 | --- | --- |
-| [`server/`](server/) | Modified [asteroid-btsyncd](https://github.com/AsteroidOS/asteroid-btsyncd): Nordic UART Service (NUS), access control, and a PTY running `/bin/sh -i` as `ceres`; Adafruit File Transfer (`fts_engine.cpp` protocol, `filetransferservice.cpp` GATT glue). |
+| [`server/`](server/) | Git submodule: branch `ble-uart` of [monperrus/asteroid-btsyncd](https://github.com/monperrus/asteroid-btsyncd), a fork of [asteroid-btsyncd](https://github.com/AsteroidOS/asteroid-btsyncd): Nordic UART Service (NUS), access control, and a PTY running `/bin/sh -i` as `ceres`; Adafruit File Transfer (`fts_engine.cpp` protocol, `filetransferservice.cpp` GATT glue). |
 | [`client/`](client/) | `ble-uart.py`, the Linux/Bleak terminal client. Its default is an SSH-like raw-terminal REPL. |
 | [`client/`](client/) | `watch-fs.py` and `fts.py`: file transfer client for the Adafruit BLE File Transfer protocol (service `0xFEBB`). |
 | [`deploy/`](deploy/) | App bundles (`.aab`) and the watch-side atomic installer triggered by files uploaded over BLE (`watch-fs.py install`). |
 | [`app/`](app/) | On-watch QML tile used to arm or disarm the service locally. |
 
+
+### Fork branches
+
+- `master`: upstream `AsteroidOS/asteroid-btsyncd` `master`, kept in sync.
+- `file-transfer`: upstream `master` plus the file service only (shared notification support in
+  `Characteristic`, then the service). It is the branch for an upstream pull request; change
+  the file service there first.
+- `ble-uart`: what runs on the watch: the BLE shell history rebased on upstream `master`, with
+  `file-transfer` merged in. `server/` pins a commit of this branch.
+
+Clone with `git clone --recurse-submodules`, or run `git submodule update --init` in an
+existing checkout.
 
 ## Architecture
 

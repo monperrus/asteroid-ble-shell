@@ -1,0 +1,4 @@
+[submodule "server"]
+	path = server
+	url = https://github.com/monperrus/asteroid-btsyncd.git
+	branch = ble-uart
