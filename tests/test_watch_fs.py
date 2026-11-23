@@ -82,3 +82,27 @@ def test_main_reports_refusal_with_status(env, monkeypatch, capsys) -> None:
     out = capsys.readouterr()
     assert json.loads(out.out)["status"] == 3
     assert "no such file" in out.err
+
+
+def test_install_uploads_renames_and_reports_the_watch_verdict(env, monkeypatch, capsys) -> None:
+    import asteroid_app_install as installer
+
+    cli, root, local = env
+    (local / "app-demo").mkdir()
+    (local / "app-demo/demo.qml").write_text("import QtQuick\nItem {}\n")
+    restarts = []
+
+    async def watch_side_runs_path_unit() -> None:  # what asteroid-app-deploy.path triggers
+        installer.process_incoming(root, lambda: restarts.append(1) or True)
+
+    monkeypatch.setattr(watch_fs, "poll_pause", watch_side_runs_path_unit)
+    result = cli("install", "app-demo", "--name", "Demo")
+    assert result["status"] == "installed" and result["app_id"] == "demo"
+    assert (root / ".local/share/applications/demo.desktop").read_text().count("Name=Demo") == 1
+    assert sorted(p.name for p in (root / ".local/share/asteroid-deploy/incoming").iterdir()) == []
+    assert restarts == [1]
+    assert capsys.readouterr().out == ""
+
+    (local / "broken.aab").write_bytes(b"ASTDFU1\0garbage")
+    with pytest.raises(watch_fs.app_bundle.BundleError):
+        cli("install", "broken.aab")

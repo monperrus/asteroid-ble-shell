@@ -67,6 +67,9 @@ of 1 MiB took 38-63 s, `get` 41 s with the default 64 KiB read requests.
 `tests/live_adafruit_interop.py ADDRESS` checks Adafruit's own client against a
 live watch.
 
+`install` packs and installs an app atomically (see `../deploy/README.md`):
+`watch-fs.py ADDRESS install ../app-tabata --name Tabata --icon ios-flame-outline`.
+
 Commands: `ls`, `get` (`-` for stdout), `put` (a trailing `/` keeps the
 basename; `--verify` reads the file back and compares SHA-256), `rm`
 (recursive), `mkdir` (with parents), `mv`. Only `ls`, `get -` and `--json`

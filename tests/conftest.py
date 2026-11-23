@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "deploy"))
 from fts_engine import EngineProcess, build
 from fts_model import ServerModel
 

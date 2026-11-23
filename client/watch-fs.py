@@ -21,7 +21,11 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "deploy"))
+import app_bundle
 import fts
+
+INCOMING = "/.local/share/asteroid-deploy/incoming"
 
 MAX_ATTRIBUTE_VALUE_SIZE = 512
 FALLBACK_WRITE_SIZE = 20
@@ -55,6 +59,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = sub.add_parser("mv", help="move or rename")
     p.add_argument("old")
     p.add_argument("new")
+    p = sub.add_parser("install", help="install an app (.qml file, app directory or .aab bundle)")
+    p.add_argument("source")
+    p.add_argument("--app-id", help="default: file stem, or directory name without 'app-'")
+    p.add_argument("--name", help="launcher label (default: app id)")
+    p.add_argument("--icon", default="ios-apps-outline", help="launcher icon name")
+    p.add_argument("--main", help="main QML file of a directory (default: its only .qml or main.qml)")
+    p.add_argument("--install-timeout", type=float, default=90, help="max wait for the watch's verdict (s)")
     args = parser.parse_args(argv)
     for name in ("path", "remote", "old", "new"):
         value = getattr(args, name, None)
@@ -108,6 +119,8 @@ async def run(args: argparse.Namespace, client: fts.Client) -> object:
                 )
             result["verified"] = True
         return result
+    if args.command == "install":
+        return await install(args, client)
     if args.command == "rm":
         await client.delete(args.path)
     elif args.command == "mkdir":
@@ -115,6 +128,49 @@ async def run(args: argparse.Namespace, client: fts.Client) -> object:
     elif args.command == "mv":
         await client.move(args.old, args.new)
     return None
+
+
+def bundle_bytes(args: argparse.Namespace) -> bytes:
+    source = Path(args.source)
+    if source.suffix == ".aab":
+        return source.read_bytes()
+    app_id, files = app_bundle.read_app(source, app_id=args.app_id, name=args.name,
+                                        icon=args.icon, main=args.main)
+    return app_bundle.pack(app_id, files)
+
+
+async def poll_pause() -> None:
+    await asyncio.sleep(1)
+
+
+async def install(args: argparse.Namespace, client: fts.Client) -> dict:
+    """Upload as .part, rename to .aab (the watch's path unit installs it), await .result."""
+    data = bundle_bytes(args)
+    bundle = app_bundle.parse(data)
+    stem = f"{INCOMING}/{bundle.app_id}"
+    await client.mkdir(INCOMING)
+    for stale in (f"{stem}.result", f"{stem}.aab"):
+        try:
+            await client.delete(stale)
+        except fts.FtsError as error:
+            if error.status != fts.ERROR_NO_FILE:
+                raise
+    await client.write(f"{stem}.part", data)
+    await client.move(f"{stem}.part", f"{stem}.aab")
+    deadline = time.monotonic() + args.install_timeout
+    while True:
+        try:
+            raw = await client.read(f"{stem}.result")
+            break
+        except fts.FtsError as error:
+            if error.status != fts.ERROR_NO_FILE or time.monotonic() > deadline:
+                raise
+        await poll_pause()
+    await client.delete(f"{stem}.result")
+    result = json.loads(raw)
+    if result.get("status") != "installed":
+        raise RuntimeError(f"install {bundle.app_id}: {result.get('error', result)}")
+    return {**result, "size": len(data)}
 
 
 def render(args: argparse.Namespace, result: object) -> None:
@@ -159,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         result = asyncio.run(connect_and_run(args))
-    except (fts.FtsError, fts.ProtocolError, TimeoutError, OSError, RuntimeError) as error:
+    except (fts.FtsError, fts.ProtocolError, TimeoutError, OSError, RuntimeError, app_bundle.BundleError) as error:
         if args.json:
             print(json.dumps({"error": str(error), "status": getattr(error, "status", None)}))
         print(f"watch-fs: {error}", file=sys.stderr)

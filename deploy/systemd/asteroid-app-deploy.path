@@ -1,0 +1,10 @@
+[Unit]
+Description=Install app bundles dropped in ~/.local/share/asteroid-deploy/incoming
+
+[Path]
+PathExistsGlob=%h/.local/share/asteroid-deploy/incoming/*.aab
+MakeDirectory=yes
+DirectoryMode=0700
+
+[Install]
+WantedBy=default.target

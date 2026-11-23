@@ -1,0 +1,6 @@
+[Unit]
+Description=Install app bundles from ~/.local/share/asteroid-deploy/incoming
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I %h/.local/lib/asteroid-deploy/asteroid_app_install.py --incoming

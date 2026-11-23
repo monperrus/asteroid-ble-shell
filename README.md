@@ -20,6 +20,7 @@ Tested on the Huawei Watch 2 (`sawfish`)
 | [`server/`](server/) | Modified [asteroid-btsyncd](https://github.com/AsteroidOS/asteroid-btsyncd): Nordic UART Service (NUS), access control, and a PTY running `/bin/sh -i` as `ceres`; Adafruit File Transfer (`fts_engine.cpp` protocol, `filetransferservice.cpp` GATT glue). |
 | [`client/`](client/) | `ble-uart.py`, the Linux/Bleak terminal client. Its default is an SSH-like raw-terminal REPL. |
 | [`client/`](client/) | `watch-fs.py` and `fts.py`: file transfer client for the Adafruit BLE File Transfer protocol (service `0xFEBB`). |
+| [`deploy/`](deploy/) | App bundles (`.aab`) and the watch-side atomic installer triggered by files uploaded over BLE (`watch-fs.py install`). |
 | [`app/`](app/) | On-watch QML tile used to arm or disarm the service locally. |
 
 
