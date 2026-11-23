@@ -3,7 +3,7 @@
 An Bluetooth Low Energy (BLE) terminal for AsteroidOS. It provides an interactive `ceres` shell when USB ADB and Wi-Fi
 are unavailable.
 
-This is a developer debugging facilit. The watch owner must explicitly enable it
+This is a developer debugging facility. The watch owner must explicitly enable it
 locally before a previously trusted host can connect.
 
 The same daemon also serves files under `/home/ceres` over the Adafruit BLE
