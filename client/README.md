@@ -43,7 +43,8 @@ race; closing the client process releases the link cleanly.
 `watch-fs.py` reads and writes files over the [Adafruit BLE File Transfer
 protocol](https://github.com/adafruit/Adafruit_CircuitPython_BLE_File_Transfer)
 v4 (service `0xFEBB`), the protocol InfiniTime also uses. Remote `/` is
-`/home/ceres`. The watch side of this service is not in `server/` yet.
+`/home/ceres`. The watch serves it from `server/src/filetransferservice.cpp`
+to any paired and trusted host, without arming.
 
 ```sh
 python3 client/watch-fs.py 43:43:A1:12:1F:AC ls /
@@ -59,6 +60,7 @@ print anything on success; exit status 1 means the watch refused (the status
 code is in the `--json` error) or the link failed.
 
 `fts.py` is the transport-independent protocol client. `tests/fts_model.py` is
-the reference server model the watch implementation follows, and
-`tests/test_fts.py` checks it against Adafruit's own client
-(`tests/vendor/`).
+the reference server model; the watch's C++ engine (`server/src/fts_engine.cpp`)
+ports it. `tests/test_fts.py` runs every protocol test against both, the C++
+one built for the host with ASan/UBSan (`tests/fts_engine_host.cpp`), using
+our client and Adafruit's own (`tests/vendor/`).

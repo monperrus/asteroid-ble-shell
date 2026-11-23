@@ -23,6 +23,7 @@
 #include "screenshotservice.h"
 #include "timeservice.h"
 #include "uartservice.h"
+#include "filetransferservice.h"
 
 #include <QDBusMetaType>
 
@@ -41,6 +42,7 @@ Application::Application(QDBusConnection bus, QObject *parent) : QObject(parent)
     // state gates sessions, not GATT presence (plan-uart.md).
     m_uartService = new UartService(6, bus);
     addService(m_uartService);
+    addService(new FileTransferService(7, bus));
 
     qDBusRegisterMetaType<InterfaceList>();
     qDBusRegisterMetaType<ManagedObjectList>();

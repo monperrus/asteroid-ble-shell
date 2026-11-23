@@ -79,6 +79,11 @@
 #define NUS_RX_UUID       "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
 #define NUS_TX_UUID       "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
 
+/* Adafruit BLE File Transfer (filetransferservice.h) */
+#define FTS_UUID          "0000febb-0000-1000-8000-00805f9b34fb"
+#define FTS_VERSION_UUID  "adaf0100-4669-6c65-5472-616e73666572"
+#define FTS_TRANSFER_UUID "adaf0200-4669-6c65-5472-616e73666572"
+
 /* BLE UART control interface (session bus) */
 #define UART_CONTROL_SERVICE_NAME "org.asteroidos.btsyncd"
 #define UART_CONTROL_PATH         "/org/asteroidos/btsyncd/uart"

@@ -6,15 +6,20 @@ are unavailable.
 This is a developer debugging facilit. The watch owner must explicitly enable it
 locally before a previously trusted host can connect.
 
+The same daemon also serves files under `/home/ceres` over the Adafruit BLE
+File Transfer protocol (service `0xFEBB`). File transfer needs no local
+arming: any paired and trusted host has access, which is as powerful as the
+shell (it can write `~/.profile` or user systemd units).
+
 Tested on the Huawei Watch 2 (`sawfish`)
 
 ## Components
 
 | Directory | Purpose |
 | --- | --- |
-| [`server/`](server/) | Modified [asteroid-btsyncd](https://github.com/AsteroidOS/asteroid-btsyncd): Nordic UART Service (NUS), access control, and a PTY running `/bin/sh -i` as `ceres`. |
+| [`server/`](server/) | Modified [asteroid-btsyncd](https://github.com/AsteroidOS/asteroid-btsyncd): Nordic UART Service (NUS), access control, and a PTY running `/bin/sh -i` as `ceres`; Adafruit File Transfer (`fts_engine.cpp` protocol, `filetransferservice.cpp` GATT glue). |
 | [`client/`](client/) | `ble-uart.py`, the Linux/Bleak terminal client. Its default is an SSH-like raw-terminal REPL. |
-| [`client/`](client/) | `watch-fs.py` and `fts.py`: file transfer client for the Adafruit BLE File Transfer protocol (service `0xFEBB`). The watch side of that service is not in `server/` yet. |
+| [`client/`](client/) | `watch-fs.py` and `fts.py`: file transfer client for the Adafruit BLE File Transfer protocol (service `0xFEBB`). |
 | [`app/`](app/) | On-watch QML tile used to arm or disarm the service locally. |
 
 

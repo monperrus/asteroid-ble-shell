@@ -16,15 +16,14 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "client"))
 import fts
-from fts_model import ServerModel
 
 # -- our client over an in-memory link ------------------------------------------------
 
 
 class Link:
-    """Connects a Client to a ServerModel; notifications are delivered after each write."""
+    """Connects a Client to a server (model or C++ engine); notifications are delivered after each write."""
 
-    def __init__(self, model: ServerModel, max_write: int) -> None:
+    def __init__(self, model, max_write: int) -> None:
         self.model = model
         self.client = fts.Client(self.send, max_write, timeout=1)
 
@@ -40,9 +39,9 @@ def run(coro):
 
 
 @pytest.fixture(params=[(20, 7, 5), (20, 20, 4096), (512, 509, 65536)], ids=["tiny", "mtu23", "mtu512"])
-def link(request, tmp_path: Path) -> Link:
+def link(request, tmp_path: Path, make_server) -> Link:
     max_write, notify, free = request.param
-    return Link(ServerModel(tmp_path, notify_size=notify, free_space=free), max_write)
+    return Link(make_server(tmp_path, notify_size=notify, free_space=free), max_write)
 
 
 def test_write_read_roundtrip(link: Link, tmp_path: Path) -> None:
@@ -121,7 +120,7 @@ def test_refusals(link: Link, op, status: int) -> None:
     assert run(link.client.read("/after")) == b"ok"
 
 
-def test_symlinks_cannot_escape_root(tmp_path: Path) -> None:
+def test_symlinks_cannot_escape_root(tmp_path: Path, make_server) -> None:
     root, outside = tmp_path / "root", tmp_path / "outside"
     root.mkdir()
     outside.mkdir()
@@ -130,7 +129,7 @@ def test_symlinks_cannot_escape_root(tmp_path: Path) -> None:
     (root / "secret-link").symlink_to(outside / "secret")
     (root / "inside").write_text("i")
     (root / "inside-link").symlink_to(root / "inside")
-    client = Link(ServerModel(root, notify_size=64), 64).client
+    client = Link(make_server(root, notify_size=64), 64).client
     for op in (
         client.read("/out/secret"),
         client.read("/secret-link"),
@@ -149,8 +148,8 @@ def test_symlinks_cannot_escape_root(tmp_path: Path) -> None:
     assert (outside / "secret").exists() and not (root / "out").is_symlink()
 
 
-def test_disconnect_mid_write_leaves_partial_file_and_fresh_parser(tmp_path: Path) -> None:
-    model = ServerModel(tmp_path, notify_size=20, free_space=10)
+def test_disconnect_mid_write_leaves_partial_file_and_fresh_parser(tmp_path: Path, make_server) -> None:
+    model = make_server(tmp_path, notify_size=20, free_space=10)
     model.feed(fts.WRITE_REQ.pack(fts.WRITE, 2, 0, 0, 30) + b"/f")
     model.feed(fts.WRITE_DATA_REQ.pack(fts.WRITE_DATA, fts.OK, 0, 10) + b"0123456789")
     model.reset()
@@ -222,7 +221,7 @@ def test_uuids_match_adafruit() -> None:
 class _PacketBuffer:
     """Synchronous stand-in for _bleio.PacketBuffer wired to the model."""
 
-    def __init__(self, model: ServerModel) -> None:
+    def __init__(self, model) -> None:
         self.model = model
         self.outgoing_packet_length = 20
         self.incoming_packet_length = model.notify_size
@@ -245,8 +244,8 @@ class _PacketBuffer:
 
 
 @pytest.fixture
-def reference(tmp_path: Path):
-    model = ServerModel(tmp_path, notify_size=64, free_space=100)
+def reference(tmp_path: Path, make_server):
+    model = make_server(tmp_path, notify_size=64, free_space=100)
     service = types.SimpleNamespace(version=4, raw=_PacketBuffer(model))
     return adafruit.FileTransferClient(service), model
 

@@ -21,6 +21,8 @@ set(
 	uartservice.cpp
 	uartsession.cpp
 	uartcontrol.cpp
+	fts_engine.cpp
+	filetransferservice.cpp
 )
 set(
 	HEADERS
@@ -46,6 +48,8 @@ set(
 	uartservice.h
 	uartsession.h
 	uartcontrol.h
+	fts_engine.h
+	filetransferservice.h
 )
 
 add_executable(asteroid-btsyncd ${SRC} ${HEADERS})

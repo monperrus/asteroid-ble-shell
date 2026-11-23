@@ -9,7 +9,6 @@ import os
 from pathlib import Path
 
 import pytest
-from fts_model import ServerModel
 from test_fts import Link
 
 _spec = importlib.util.spec_from_file_location(
@@ -20,12 +19,12 @@ _spec.loader.exec_module(watch_fs)
 
 
 @pytest.fixture
-def env(tmp_path: Path, monkeypatch):
+def env(tmp_path: Path, monkeypatch, make_server):
     root, local = tmp_path / "watch", tmp_path / "host"
     root.mkdir()
     local.mkdir()
     monkeypatch.chdir(local)
-    link = Link(ServerModel(root, notify_size=64, free_space=512), 64)
+    link = Link(make_server(root, notify_size=64, free_space=512), 64)
 
     def cli(*argv: str):
         args = watch_fs.parse_args(["AA:BB:CC:DD:EE:FF", *argv])
