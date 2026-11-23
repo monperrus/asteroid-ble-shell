@@ -37,3 +37,28 @@ The client subscribes to TX before transmitting any input. It intentionally
 does not call `BleakClient.disconnect()` at exit because this host's
 Bleak/BlueZ D-Bus combination can report a spurious `EOFError` during that
 race; closing the client process releases the link cleanly.
+
+## File transfer: `watch-fs.py`
+
+`watch-fs.py` reads and writes files over the [Adafruit BLE File Transfer
+protocol](https://github.com/adafruit/Adafruit_CircuitPython_BLE_File_Transfer)
+v4 (service `0xFEBB`), the protocol InfiniTime also uses. Remote `/` is
+`/home/ceres`. The watch side of this service is not in `server/` yet.
+
+```sh
+python3 client/watch-fs.py 43:43:A1:12:1F:AC ls /
+python3 client/watch-fs.py 43:43:A1:12:1F:AC put song.mp3 /Music/ --verify
+python3 client/watch-fs.py 43:43:A1:12:1F:AC get /sleep/2026-11-23.csv
+python3 client/watch-fs.py 43:43:A1:12:1F:AC --json ls /sleep
+```
+
+Commands: `ls`, `get` (`-` for stdout), `put` (a trailing `/` keeps the
+basename; `--verify` reads the file back and compares SHA-256), `rm`
+(recursive), `mkdir` (with parents), `mv`. Only `ls`, `get -` and `--json`
+print anything on success; exit status 1 means the watch refused (the status
+code is in the `--json` error) or the link failed.
+
+`fts.py` is the transport-independent protocol client. `tests/fts_model.py` is
+the reference server model the watch implementation follows, and
+`tests/test_fts.py` checks it against Adafruit's own client
+(`tests/vendor/`).
