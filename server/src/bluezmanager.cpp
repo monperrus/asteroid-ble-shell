@@ -35,7 +35,6 @@ BlueZManager::BlueZManager(QDBusObjectPath appPath, QDBusObjectPath advertPath, 
 {
     mConnected = false;
     mServicesResolved = false;
-    mConnectedDevice = "";
 
     mWatcher = new QDBusServiceWatcher(BLUEZ_SERVICE_NAME, QDBusConnection::systemBus());
     connect(mWatcher, SIGNAL(serviceRegistered(const QString&)), this, SLOT(serviceRegistered(const QString&)));
@@ -68,7 +67,6 @@ void BlueZManager::serviceUnregistered(const QString& name)
     setAdapter("adapter");
     mDiscovering = false;
     mRestartAfterDiscovery = false;
-    mConnectedDevice = "";
     setConnected(false);
 }
 
@@ -116,9 +114,6 @@ void BlueZManager::updateAdapter() {
                  QMap<QString, QVariant> properties = value.value(DEVICE_MANAGER_IFACE);
                  if(properties.contains("Connected") && properties.value("Connected").toBool()) {
                     connected = true;
-                    if(properties.contains("Alias")) {
-                       mConnectedDevice = properties.value("Alias").toString();
-                    }
                  }
 
                  if(properties.contains("ServicesResolved"))
@@ -217,7 +212,7 @@ void BlueZManager::onAdapterChanged()
 void BlueZManager::PropertiesChanged(QString interface, QMap<QString, QVariant> changed, QStringList invalidated)
 {
     const QStringList relevant = interface == DEVICE_MANAGER_IFACE
-        ? QStringList{"Connected", "ServicesResolved", "Alias"}
+        ? QStringList{"Connected", "ServicesResolved"}
         : QStringList{"Discovering", "Powered"};
     for (const QString &property : relevant) {
         if (changed.contains(property) || invalidated.contains(property)) {
@@ -229,48 +224,18 @@ void BlueZManager::PropertiesChanged(QString interface, QMap<QString, QVariant> 
 
 void BlueZManager::onConnectedChanged()
 {
-    QString appName, appIcon, summary, body;
-    appName = "";
+    if (mConnected)
+        return;
 
-    if(mConnected) {
-        // nothing BLE-UART specific on connect; sessions start on first RX
-        //% "Connected"
-        summary = qtTrId("id-connected");
-        body = mConnectedDevice;
-        appIcon = "ios-bluetooth-outline";
-    } else {
-        // The PTY cannot outlive its link, but the owner-selected arm window
-        // can. End this peer session and permit a trusted reconnection until
-        // the original deadline.
-        if (mUartSession)
-            mUartSession->endPeer();
-        mAncs.disconnect();
-        mCts.disconnect();
-        //% "Disconnected"
-        summary = qtTrId("id-disconnected");
-        body = "";
-        appIcon = "ios-bluetooth-off-outline";
-    }
-
-    QVariantMap hints;
-    hints.insert("x-nemo-preview-body", body);
-    hints.insert("x-nemo-preview-summary", summary);
-    hints.insert("x-nemo-feedback", "notif_silent");
-    hints.insert("urgency", 3);
-    hints.insert("transient", true);
-
-    QList<QVariant> argumentList;
-    argumentList << appName;
-    argumentList << (uint) 0;
-    argumentList << appIcon;
-    argumentList << summary;
-    argumentList << body;
-    argumentList << QStringList();
-    argumentList << hints;
-    argumentList << (int) 3;
-
-    static QDBusInterface notifyApp(NOTIFICATIONS_SERVICE_NAME, NOTIFICATIONS_PATH_BASE, NOTIFICATIONS_MAIN_IFACE);
-    notifyApp.callWithArgumentList(QDBus::AutoDetect, "Notify", argumentList);
+    // The PTY cannot outlive its link, but the owner-selected arm window can.
+    // End this peer session and permit a trusted reconnection until the
+    // original deadline. Connection state is intentionally not surfaced as a
+    // watch notification: BlueZ can change it while the display sleeps, and
+    // those transient events otherwise accumulate until the next wake.
+    if (mUartSession)
+        mUartSession->endPeer();
+    mAncs.disconnect();
+    mCts.disconnect();
 }
 
 void BlueZManager::onServicesResolvedChanged() {

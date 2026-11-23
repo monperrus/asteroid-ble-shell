@@ -43,7 +43,7 @@ private:
     bool mDiscovering = false;
     bool mRestartAfterDiscovery = false;
     QDBusObjectPath mAppPath, mAdvertPath;
-    QString mAdapter, mConnectedDevice;
+    QString mAdapter;
     QDBusServiceWatcher *mWatcher;
     QDBusConnection mBus;
     ANCS mAncs;
