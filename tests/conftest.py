@@ -7,8 +7,14 @@ from pathlib import Path
 
 import pytest
 
+ROOT = Path(__file__).resolve().parent.parent
+# Server-side test support (model, engine driver, Adafruit's client) lives in the
+# server submodule; client/ comes first so `import fts` is this repo's client.
+sys.path.insert(0, str(ROOT / "server" / "tests" / "fts"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "deploy"))
+sys.path.insert(0, str(ROOT / "deploy"))
+sys.path.insert(0, str(ROOT / "client"))
+import fts  # noqa: E402,F401  (cached before the server tests can import their copy)
 from fts_engine import EngineProcess, build
 from fts_model import ServerModel
 

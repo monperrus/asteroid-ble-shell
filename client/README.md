@@ -76,8 +76,10 @@ basename; `--verify` reads the file back and compares SHA-256), `rm`
 print anything on success; exit status 1 means the watch refused (the status
 code is in the `--json` error) or the link failed.
 
-`fts.py` is the transport-independent protocol client. `tests/fts_model.py` is
-the reference server model; the watch's C++ engine (`server/src/fts_engine.cpp`)
-ports it. `tests/test_fts.py` runs every protocol test against both, the C++
-one built for the host with ASan/UBSan (`tests/fts_engine_host.cpp`), using
-our client and Adafruit's own (`tests/vendor/`).
+`fts.py` is the transport-independent protocol client. The protocol tests
+live with the server, in `server/tests/fts/`: `fts_model.py` is the reference
+server model that the watch's C++ engine (`server/src/fts_engine.cpp`) ports,
+and every test runs against both, the C++ one built for the host with
+ASan/UBSan, using a copy of this client and Adafruit's own (`vendor/`).
+`tests/test_fts.py` here runs those same tests with this repo's `fts.py`, and
+fails if the server's copy differs from it.
