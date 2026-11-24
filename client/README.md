@@ -45,9 +45,11 @@ The client subscribes to TX before transmitting any input.
 `watch-autolock`) already holds the watch's LE link, and leave it as they found
 it. An address goes straight to BlueZ's device object, because a connected watch
 does not advertise (a name needs a scan, so it only works while unconnected).
-`InProgress` while another client connects is retried for 10 s. On exit, a link
-that existed before is kept: Bleak would otherwise send `Device1.Disconnect`,
-which drops it for every client. A link the tool opened is closed, ignoring the
+`InProgress` while another client connects (watch-autolock reconnecting can
+take 10–20 s) is retried for up to 35 s. On exit, a link that existed before,
+or that another client was opening, is kept: Bleak would otherwise send
+`Device1.Disconnect`, which drops it for every client. A link the tool opened
+alone is closed, ignoring the
 spurious `EOFError` this host's BlueZ can report while it goes down.
 
 ## File transfer: `watch-fs.py`

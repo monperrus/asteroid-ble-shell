@@ -47,13 +47,27 @@ def fake(monkeypatch):
     FakeClient.failures = []
     monkeypatch.setattr(ble_link, "BleakClient", FakeClient)
     monkeypatch.setattr(ble_link, "RETRY_DELAY", 0)
-    state = {"connected": False}
+    monkeypatch.setattr(ble_link, "OTHER_CONNECT_WAIT", 0.2)
+    # connect_errors: answers of successive Device1.Connect calls (None = success);
+    # other_up_after: the other client's link comes up after this many Connected reads.
+    state = {"connected": False, "connect_errors": [], "connects": 0, "other_up_after": None, "reads": 0}
 
     async def bluez_connected(path: str) -> bool:
         state["path"] = path
+        state["reads"] += 1
+        if state["other_up_after"] is not None and state["reads"] > state["other_up_after"]:
+            state["connected"] = True
         return state["connected"]
 
+    async def bluez_connect(path: str, timeout: float) -> str | None:
+        state["connects"] += 1
+        error = state["connect_errors"].pop(0) if state["connect_errors"] else None
+        if error is None:
+            state["connected"] = True
+        return error
+
     monkeypatch.setattr(ble_link, "bluez_connected", bluez_connected)
+    monkeypatch.setattr(ble_link, "bluez_connect", bluez_connect)
     return state
 
 
@@ -74,20 +88,49 @@ def test_existing_link_is_kept(fake) -> None:
 
 def test_link_opened_here_is_closed_despite_eoferror(fake) -> None:
     client = asyncio.run(session())
+    assert fake["connects"] == 1
     assert client.disconnected
 
 
-def test_inprogress_is_retried(fake) -> None:
+def test_existing_link_is_not_connected_again(fake) -> None:
+    fake["connected"] = True
+    asyncio.run(session())
+    assert fake["connects"] == 0
+
+
+def test_another_clients_connect_is_waited_out_not_cancelled(fake) -> None:
+    # watch-autolock is reconnecting: Connect answers InProgress until its link is up.
+    fake["connect_errors"] = ["org.bluez.Error.InProgress"] * 100
+    fake["other_up_after"] = 3
+    client = asyncio.run(session())
+    assert fake["connects"] == 2  # InProgress twice, then the other link is seen up
+    assert not client.disconnected  # the link is watch-autolock's
+    assert client._backend._disconnect_monitor_event.is_set()
+
+
+def test_failed_raw_connect_raises(fake) -> None:
+    fake["connect_errors"] = ["org.bluez.Error.Failed"]
+    with pytest.raises(BleakDBusError):
+        asyncio.run(session())
+    fake["connect_errors"] = ["org.bluez.Error.InProgress"] * 10**6
+    with pytest.raises(BleakDBusError):
+        asyncio.run(session())
+
+
+def test_inprogress_is_retried_and_the_link_left_to_its_opener(fake) -> None:
+    # watch-autolock was reconnecting: the link it opens must survive this session.
     FakeClient.failures = ["org.bluez.Error.InProgress"] * 3
     client = asyncio.run(session())
     assert client.connects == 4
+    assert not client.disconnected
+    assert client._backend._disconnect_monitor_event.is_set()
 
 
 def test_other_errors_and_endless_inprogress_raise(fake) -> None:
     FakeClient.failures = ["org.bluez.Error.Failed"]
     with pytest.raises(BleakDBusError):
         asyncio.run(session())
-    FakeClient.failures = ["org.bluez.Error.InProgress"] * ble_link.CONNECT_ATTEMPTS
+    FakeClient.failures = ["org.bluez.Error.InProgress"] * 10**6
     with pytest.raises(BleakDBusError):
         asyncio.run(session())
 

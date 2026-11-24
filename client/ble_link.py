@@ -7,11 +7,17 @@ it:
 - an address is resolved to BlueZ's device object directly, because a
   connected watch does not advertise and Bleak's address scan would never
   find it; a name still needs a scan, so it only works while unconnected;
-- ``org.bluez.Error.InProgress`` (another client is connecting right now) is
-  retried for a few seconds;
-- on exit, a link that existed before is kept: Bleak would otherwise send
-  ``Device1.Disconnect``, which drops the link for every client. A link this
-  tool opened is disconnected.
+- a link that is down is brought up with a plain ``Device1.Connect``, not
+  through Bleak: when another client (watch-autolock reconnecting) is
+  connecting right now, BlueZ answers ``org.bluez.Error.InProgress``, and
+  Bleak's error path would then send ``Device1.Disconnect``, which cancels
+  that other client's connect (with a retry each second, the link stayed down
+  for 37 s). ``InProgress`` is retried for as long as such a connect may take
+  (watch-autolock's runs up to 30 s), and the resulting link counts as the
+  other client's;
+- on exit, a link that existed before, or that another client was opening, is
+  kept: Bleak would otherwise send ``Device1.Disconnect``, which drops the
+  link for every client. A link this tool opened alone is disconnected.
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakDBusError
 
-CONNECT_ATTEMPTS = 10
+OTHER_CONNECT_WAIT = 35.0  # seconds to wait out another client's Connect (busctl --timeout=30)
 RETRY_DELAY = 1.0
 DISCONNECT_TIMEOUT = 10.0
 
@@ -54,36 +60,66 @@ async def resolve(watch: str, adapter: str | None, scan_timeout: float) -> BLEDe
     return device
 
 
-async def bluez_connected(path: str) -> bool:
-    """Device1.Connected as BlueZ reports it; False when the device is unknown."""
-    from dbus_fast import BusType, Message, MessageType
+async def _bluez_call(path: str, interface: str, member: str, signature: str = "",
+                      body: list[Any] | None = None, timeout: float | None = None):
+    from dbus_fast import BusType, Message
     from dbus_fast.aio import MessageBus
 
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     try:
-        reply = await bus.call(
-            Message(
-                destination="org.bluez",
-                path=path,
-                interface="org.freedesktop.DBus.Properties",
-                member="Get",
-                signature="ss",
-                body=["org.bluez.Device1", "Connected"],
-            )
-        )
-        return reply.message_type == MessageType.METHOD_RETURN and bool(reply.body[0].value)
+        message = Message(destination="org.bluez", path=path, interface=interface,
+                          member=member, signature=signature, body=body or [])
+        return await asyncio.wait_for(bus.call(message), timeout)
     finally:
         bus.disconnect()
 
 
-async def connect(client: BleakClient, **kwargs: Any) -> None:
-    for attempt in range(CONNECT_ATTEMPTS):
+async def bluez_connected(path: str) -> bool:
+    """Device1.Connected as BlueZ reports it; False when the device is unknown."""
+    from dbus_fast import MessageType
+
+    reply = await _bluez_call(path, "org.freedesktop.DBus.Properties", "Get", "ss",
+                              ["org.bluez.Device1", "Connected"])
+    return reply.message_type == MessageType.METHOD_RETURN and bool(reply.body[0].value)
+
+
+async def bluez_connect(path: str, timeout: float) -> str | None:
+    """Device1.Connect; None on success, else the D-Bus error name. Never disconnects."""
+    from dbus_fast import MessageType
+
+    reply = await _bluez_call(path, "org.bluez.Device1", "Connect", timeout=timeout)
+    return None if reply.message_type == MessageType.METHOD_RETURN else reply.error_name
+
+
+async def bring_up(path: str, timeout: float) -> bool:
+    """Make sure the link is up; True when another client was connecting it meanwhile."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + OTHER_CONNECT_WAIT
+    other = False
+    while not await bluez_connected(path):
+        error = await bluez_connect(path, timeout)
+        if error is None:
+            break
+        if error != "org.bluez.Error.InProgress" or loop.time() >= deadline:
+            raise BleakDBusError(error, [])
+        other = True
+        await asyncio.sleep(RETRY_DELAY)
+    return other
+
+
+async def connect(client: BleakClient, **kwargs: Any) -> bool:
+    """Connect; True when another client was connecting the device meanwhile."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + OTHER_CONNECT_WAIT
+    other = False
+    while True:
         try:
             await client.connect(**kwargs)
-            return
+            return other
         except BleakDBusError as error:
-            if error.dbus_error != "org.bluez.Error.InProgress" or attempt == CONNECT_ATTEMPTS - 1:
+            if error.dbus_error != "org.bluez.Error.InProgress" or loop.time() >= deadline:
                 raise
+            other = True
             await asyncio.sleep(RETRY_DELAY)
 
 
@@ -119,9 +155,14 @@ class WatchLink:
 
     async def __aenter__(self) -> BleakClient:
         target = await resolve(self.watch, self.adapter, self.scan_timeout)
-        self.preexisting = await bluez_connected(target.details["path"])
+        path = target.details["path"]
+        self.preexisting = await bluez_connected(path)
+        if not self.preexisting:
+            self.preexisting = await bring_up(path, self.connect_timeout or 30)
+        # The link is up now, so Bleak attaches to it without calling Connect.
         self.client = BleakClient(target, **self.client_kwargs, **bluez_kwargs(self.adapter))
-        await connect(self.client, **({"timeout": self.connect_timeout} if self.connect_timeout else {}))
+        other = await connect(self.client, **({"timeout": self.connect_timeout} if self.connect_timeout else {}))
+        self.preexisting = self.preexisting or other
         return self.client
 
     async def __aexit__(self, *exc: object) -> None:
