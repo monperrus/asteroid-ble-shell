@@ -18,7 +18,10 @@ a real terminal and puts it in raw mode; press **Ctrl-]** to disconnect locally.
 `--line-mode` is intentionally the non-interactive option for pipes and simple
 scripts. It sends LF-terminated lines as CR, like a terminal
 Enter. Both modes exit with status 1 when the shell does not answer an initial
-empty command line within `--arm-timeout` seconds: BLE UART is not armed. They also exit
+empty command line within `--arm-timeout` seconds: BLE UART is not armed. With
+no answer after 2 s they first unsubscribe from TX, wait 2 s and probe again:
+on a link kept up by another program, a session started right after the
+previous one ended is otherwise attached to the watch's dying shell. They also exit
 with status 1, naming what was lost, when a write stalls for 10 s or input lines are
 still unsent after `--drain-timeout` seconds.
 

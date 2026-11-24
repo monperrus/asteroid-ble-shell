@@ -29,6 +29,8 @@ FALLBACK_CHUNK_SIZE = 20
 MAX_ATTRIBUTE_VALUE_SIZE = 512
 PROBE = b"\r"  # an empty command line: the shell answers with its prompt
 WRITE_TIMEOUT = 10.0  # seconds one chunk may take before the client fails loudly
+PROBE_RETRY_AFTER = 2.0  # seconds without a prompt before resubscribing once
+SHELL_REAP_TIME = 2.0  # the watch reaps a stopped shell within 1.5 s (SIGHUP, then SIGTERM)
 
 
 def parse_args() -> argparse.Namespace:
@@ -194,6 +196,34 @@ def explain_error(error: Exception) -> str:
     return text
 
 
+async def probe_shell(client, rx, answered: asyncio.Event, on_tx, timeout: float) -> bool:
+    """Send an empty command line; True once the shell answers.
+
+    The watch drops input silently while BLE UART is disarmed, so this runs
+    before stdin is read. One retry covers a kept link: when the previous
+    session on it ended less than about 1.5 s ago, the watch is still reaping
+    that session's shell and pins the new session to it, which never answers
+    (asteroid-btsyncd before the fix in its `ble-uart` branch). Unsubscribing
+    from TX ends that session on the watch; subscribing again after the
+    reap starts a fresh one.
+    """
+    await rx.send(PROBE)
+    first = min(PROBE_RETRY_AFTER, timeout)
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(answered.wait(), timeout=first)
+        return True
+    if timeout <= first:
+        return False
+    await client.stop_notify(NUS_TX_UUID)
+    await asyncio.sleep(SHELL_REAP_TIME)
+    await client.start_notify(NUS_TX_UUID, on_tx)
+    await rx.send(PROBE)
+    with contextlib.suppress(asyncio.TimeoutError):
+        await asyncio.wait_for(answered.wait(), timeout=max(timeout - first, 1.0))
+        return True
+    return False
+
+
 async def run(args: argparse.Namespace) -> None:
     if not args.line_mode and not sys.stdin.isatty():
         raise RuntimeError("the shell REPL needs a terminal; use --line-mode for a pipe or file")
@@ -234,17 +264,12 @@ async def run(args: argparse.Namespace) -> None:
             "Connected to ceres@watch over BLE UART. Press Ctrl-] to disconnect.",
             file=sys.stderr,
         )
-        # The watch drops input silently while BLE UART is disarmed, so probe
-        # before reading stdin and fail loudly when the shell stays mute.
-        await rx.send(PROBE)
-        try:
-            await asyncio.wait_for(answered.wait(), timeout=args.arm_timeout)
-        except asyncio.TimeoutError:
+        if not await probe_shell(client, rx, answered, on_tx, args.arm_timeout):
             raise RuntimeError(
                 f"no answer from the watch shell within {args.arm_timeout:g} s: "
                 "BLE UART is not armed (open BLE SHELL on the watch and tap "
                 "until it says SHELL ARMED)"
-            ) from None
+            )
 
         failure: list[BaseException] = []
         writer = asyncio.create_task(write_stream(rx, input_queue, stop, failure))

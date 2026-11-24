@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
@@ -100,3 +101,47 @@ def test_write_chunks_fit_the_gatt_attribute(reported_size: int, first_chunk: in
     asyncio.run(ble_uart.RxWriter(client).send(command))
     assert writes[0] == first_chunk
     assert received == command
+
+
+class _ProbeWatch:
+    """Fake client + RX writer: the shell answers the probe number `answer_on` (1-based), or never."""
+
+    def __init__(self, answer_on: int | None) -> None:
+        self.answer_on, self.probes, self.calls = answer_on, 0, []
+        self.answered = asyncio.Event()
+
+    async def send(self, data: bytes) -> None:
+        assert data == ble_uart.PROBE
+        self.probes += 1
+        self.calls.append("probe")
+        if self.probes == self.answer_on:
+            self.answered.set()
+
+    async def stop_notify(self, uuid: str) -> None:
+        self.calls.append("stop_notify")
+
+    async def start_notify(self, uuid: str, callback) -> None:
+        self.calls.append("start_notify")
+
+
+@pytest.mark.parametrize(
+    ("answer_on", "expected", "calls"),
+    [
+        (1, True, ["probe"]),
+        (2, True, ["probe", "stop_notify", "start_notify", "probe"]),
+        (None, False, ["probe", "stop_notify", "start_notify", "probe"]),
+    ],
+)
+def test_probe_shell_resubscribes_once(monkeypatch, answer_on, expected, calls) -> None:
+    monkeypatch.setattr(ble_uart, "PROBE_RETRY_AFTER", 0.05)
+    monkeypatch.setattr(ble_uart, "SHELL_REAP_TIME", 0.01)
+    watch = _ProbeWatch(answer_on)
+    ok = asyncio.run(ble_uart.probe_shell(watch, watch, watch.answered, None, 0.2))
+    assert (ok, watch.calls) == (expected, calls)
+
+
+def test_probe_shell_without_time_for_a_retry(monkeypatch) -> None:
+    monkeypatch.setattr(ble_uart, "PROBE_RETRY_AFTER", 0.05)
+    watch = _ProbeWatch(None)
+    assert not asyncio.run(ble_uart.probe_shell(watch, watch, watch.answered, None, 0.05))
+    assert watch.calls == ["probe"]
