@@ -27,6 +27,11 @@ runs `asteroid_app_install.py --incoming` as `ceres`:
 4. keep the current and previous release, delete older ones, write the JSON
    verdict to `.result` and remove the `.aab` (also on failure).
 
+The launcher restart has a cost on a stock launcher: one that starts with two
+or more stored text notifications stops adding new ones to the notification
+center ([asteroid-launcher#316](https://github.com/AsteroidOS/asteroid-launcher/pull/316)
+has the fix).
+
 A bad bundle never touches the active release. The format and the reasoning
 behind it are in the watch repo's `dfu-deployment-design.md`; the Nordic DFU
 transport described there is not used.
