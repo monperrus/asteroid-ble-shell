@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
 import sys
 from pathlib import Path
 from typing import ClassVar
@@ -142,3 +144,28 @@ def test_client_kwargs_pass_through(fake) -> None:
     client = asyncio.run(session(disconnected_callback=callback))
     assert client.kwargs["disconnected_callback"] is callback
     assert client.kwargs["bluez"] == {"adapter": "hci1"}
+
+
+def test_registered_holder_keeps_a_link_opened_here(fake, tmp_path, monkeypatch) -> None:
+    # watch-autolock lost the race to connect but is registered as holding the link.
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    holders = ble_link.holders_dir("43:43:a1:12:1f:ac")
+    holders.mkdir(parents=True)
+    (holders / str(os.getppid())).touch()
+    client = asyncio.run(session())
+    assert fake["connects"] == 1
+    assert not client.disconnected
+    assert client._backend._disconnect_monitor_event.is_set()
+
+
+def test_stale_holder_files_are_ignored(fake, tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    holders = ble_link.holders_dir("43:43:A1:12:1F:AC")
+    holders.mkdir(parents=True)
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    (holders / str(dead.pid)).touch()
+    (holders / str(os.getpid())).touch()  # this process does not count
+    (holders / "notes.txt").touch()
+    assert ble_link.link_holders("43:43:A1:12:1F:AC") == []
+    assert asyncio.run(session()).disconnected

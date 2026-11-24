@@ -17,13 +17,17 @@ it:
   other client's;
 - on exit, a link that existed before, or that another client was opening, is
   kept: Bleak would otherwise send ``Device1.Disconnect``, which drops the
-  link for every client. A link this tool opened alone is disconnected.
+  link for every client. So is a link a live program has registered as
+  holding (see ``link_holders``): watch-autolock may lose the race to connect
+  and still want the link. Any other link this tool opened is disconnected.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
+from pathlib import Path
 from typing import Any
 
 from bleak import BleakClient, BleakScanner
@@ -123,6 +127,33 @@ async def connect(client: BleakClient, **kwargs: Any) -> bool:
             await asyncio.sleep(RETRY_DELAY)
 
 
+def holders_dir(watch: str) -> Path:
+    """Where programs that keep the watch's link up register, one file per pid.
+
+    A holder (watch-autolock) creates ``$XDG_RUNTIME_DIR/ble-link-holders/<ADDRESS>/<pid>``
+    while it runs. Stale files of dead processes are ignored.
+    """
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return Path(runtime) / "ble-link-holders" / watch.upper()
+
+
+def link_holders(watch: str) -> list[int]:
+    """Pids of live programs registered as holding the watch's link."""
+    alive = []
+    with contextlib.suppress(OSError):
+        for entry in holders_dir(watch).iterdir():
+            if not entry.name.isdigit() or int(entry.name) == os.getpid():
+                continue
+            try:
+                os.kill(int(entry.name), 0)
+            except ProcessLookupError:
+                continue
+            except PermissionError:
+                pass
+            alive.append(int(entry.name))
+    return sorted(alive)
+
+
 def keep_link(client: BleakClient) -> None:
     """Stop Bleak from disconnecting the device when the event loop shuts down.
 
@@ -172,7 +203,7 @@ class WatchLink:
         client, self.client = self.client, None
         if client is None:
             return
-        if self.preexisting:
+        if self.preexisting or (":" in self.watch and link_holders(self.watch)):
             keep_link(client)
             return
         # This host's BlueZ can report a spurious EOFError while the link goes

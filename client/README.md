@@ -48,8 +48,11 @@ does not advertise (a name needs a scan, so it only works while unconnected).
 `InProgress` while another client connects (watch-autolock reconnecting can
 take 10–20 s) is retried for up to 35 s. On exit, a link that existed before,
 or that another client was opening, is kept: Bleak would otherwise send
-`Device1.Disconnect`, which drops it for every client. A link the tool opened
-alone is closed, ignoring the
+`Device1.Disconnect`, which drops it for every client. So is a link that a
+live program holds by registration: `watch-autolock` creates
+`$XDG_RUNTIME_DIR/ble-link-holders/<ADDRESS>/<pid>` while it runs, because it
+may lose the race to connect and still want the link. Any other link the tool
+opened alone is closed, ignoring the
 spurious `EOFError` this host's BlueZ can report while it goes down.
 
 ## File transfer: `watch-fs.py`
