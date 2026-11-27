@@ -11,7 +11,7 @@ desktop_dir=/home/ceres/.local/share/applications
 adb push "$here/ble-uart.qml" "/data/local/tmp/$name.qml"
 adb push "$here/qml-run" "/data/local/tmp/qml-run"
 adb push "$here/ble-uart.desktop" "/data/local/tmp/$name.desktop"
-adb shell "set -e
+"$here/../adb-sh" "set -e
 mkdir -p $qml_dir $bin_dir $desktop_dir
 mv /data/local/tmp/$name.qml $qml_dir/$name.qml
 if [ ! -x $bin_dir/qml-run ]; then mv /data/local/tmp/qml-run $bin_dir/qml-run; chmod 755 $bin_dir/qml-run; else rm -f /data/local/tmp/qml-run; fi

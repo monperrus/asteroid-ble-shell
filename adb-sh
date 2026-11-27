@@ -1,0 +1,27 @@
+#!/bin/sh
+# adb-sh — `adb shell` that exits with the remote command's status.
+#
+# The watch's adbd (android-tools 5.1.1, no shell_v2) makes `adb shell` exit 0
+# whatever the remote command did, and ends output lines with \r\n. adb-sh runs
+# the command in a subshell, appends its status as a marker, strips the \r and
+# exits with that status; 255 when no marker arrives (no device, adb error).
+# Remote stderr comes back on stdout (the old adbd merges them).
+# Also correct against an adbd with shell_v2.
+#
+# Usage: adb-sh [-s SERIAL] 'remote command'
+set -eu
+usage() { echo "usage: adb-sh [-s SERIAL] 'remote command'" >&2; exit 2; }
+serial=""
+case "${1:-}" in
+    -h|--help|'') usage ;;
+    -s) [ $# -ge 3 ] || usage; serial="$2"; shift 2 ;;
+esac
+adb ${serial:+-s "$serial"} shell "(
+$*
+); echo \"@@adb-sh-rc=\$?\"" < /dev/null | awk '
+    { sub(/\r$/, "") }
+    match($0, /@@adb-sh-rc=[0-9]+$/) {
+        printf "%s", substr($0, 1, RSTART - 1); rc = substr($0, RSTART + 12) + 0; found = 1; next
+    }
+    { print }
+    END { exit found ? rc : 255 }'

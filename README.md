@@ -69,6 +69,10 @@ With ADB connected for setup:
 ./app/deploy-adb.sh
 ```
 
+The ADB scripts run remote commands through `./adb-sh`, not `adb shell`: the
+watch's adbd (android-tools 5.1.1, no `shell_v2`) makes `adb shell` exit 0
+even when the remote command fails, so `set -e` would not stop on it.
+
 Open **BLE SHELL** in the launcher and tap the large centre dial until it says
 **SHELL ARMED**. This enables a 15-minute access window.
 
